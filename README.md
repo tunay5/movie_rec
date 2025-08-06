@@ -8,4 +8,4 @@ By utilizing collaborative filtering, you can have recommendations based
 on your preferences. Simply put three movies and evaluate, then receive
 movie recommendations.
 
-![My plot](pics/pic_1.png) ![My plot](pics/pic_2.png)
+![Poster](pics/pic_1.PNG) ![Poster](pics/pic_2.PNG)
