@@ -1,1 +1,9 @@
-"# movie_rec" 
+Movie Recommendation App
+================
+2025-08-06
+
+# Movie Recommendation Algorithm
+
+By utilizing collaborative filtering, you can have recommendations based
+on your preferences. Simply put three movies and evaluate, then receive
+movie recommendations.
