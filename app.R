@@ -1,196 +1,204 @@
-# Load required libraries
 library(shiny)
-library(DT)
-library(dplyr)
+library(stringr)
+library(bslib)
+library(jsonlite)
+library(httr)
+library(shinycssloaders)
+library(lsa)
 
-# Sample data for today's matches (you can replace this with real API data)
-todays_matches <- data.frame(
-  Match_ID = 1:6,
-  Time = c("15:00", "17:30", "20:00", "15:00", "17:30", "20:00"),
-  Home_Team = c("Manchester United", "Liverpool", "Arsenal", "Barcelona", "Real Madrid", "Bayern Munich"),
-  Away_Team = c("Chelsea", "Manchester City", "Tottenham", "Atletico Madrid", "Sevilla", "Borussia Dortmund"),
-  League = c("Premier League", "Premier League", "Premier League", "La Liga", "La Liga", "Bundesliga"),
-  Home_Score_Prediction = rep(NA, 6),
-  Away_Score_Prediction = rep(NA, 6),
-  Winner_Prediction = rep("", 6),
-  stringsAsFactors = FALSE
+df_movies <- read.csv("data/df_movies.csv")
+
+custom_theme <- bs_theme(
+  version = 5,
+  bootswatch = "flatly",
+  base_font = font_google("Poppins"),
+  heading_font = font_google("Poppins")
 )
 
-# Define UI
 ui <- fluidPage(
-  titlePanel("Today's Football Matches - Predictions"),
+  theme = custom_theme,
   
-  # Add some styling
-  tags$head(
-    tags$style(HTML("
-      .content-wrapper {
-        margin: 20px;
-      }
-      .match-table {
-        margin-top: 20px;
-      }
-      .btn-submit {
-        background-color: #28a745;
-        border-color: #28a745;
-        margin-top: 15px;
-        margin-bottom: 15px;
-      }
-      .btn-reset {
-        background-color: #dc3545;
-        border-color: #dc3545;
-        margin-top: 15px;
-        margin-bottom: 15px;
-        margin-left: 10px;
-      }
-    "))
-  ),
+  titlePanel(div(h2("Movie Recommendation Algorithm", class = "text-center mt-4"))),
   
-  div(class = "content-wrapper",
-      fluidRow(
-        column(12,
-               h4(paste("Matches for", Sys.Date())),
-               hr(),
-               
-               # Action buttons
-               fluidRow(
-                 column(3,
-                        actionButton("submit_predictions", "Submit All Predictions", 
-                                     class = "btn btn-success btn-submit", width = "100%")
-                 ),
-                 column(3,
-                        actionButton("reset_predictions", "Reset All", 
-                                     class = "btn btn-danger btn-reset", width = "100%")
-                 ),
-                 column(6,
-                        div(id = "status_message", style = "padding-top: 15px;")
-                 )
-               ),
-               
-               # Editable table
-               div(class = "match-table",
-                   DT::dataTableOutput("matches_table")
-               ),
-               
-               # Summary of predictions
-               hr(),
-               h4("Prediction Summary"),
-               verbatimTextOutput("prediction_summary")
-        )
-      )
+  tabsetPanel(id = "tabs", type = "hidden",
+              
+              tabPanel("movie_1",
+                       div(class = "container mt-5",
+                           div(class = "card shadow p-4",
+                               h4("Movie You Watched Before", class = "mb-3"),
+                               selectizeInput(
+                                 "types_text_1",
+                                 label = NULL,
+                                 choices = df_movies$movies,
+                                 multiple = TRUE,
+                                 options = list(create = TRUE, placeholder = 'e.g. Interstellar, The Green Mile')
+                               ),
+                               selectInput(
+                                 "rating_1",
+                                 label = "Your Rating (0–5):",
+                                 choices = seq(0, 5, by = 0.5),
+                                 selected = NULL
+                               ),
+                               actionButton("next1", "Next ➡️", class = "btn btn-primary mt-3")
+                           )
+                       )
+              ),
+              
+              tabPanel("movie_2",
+                       div(class = "container mt-5",
+                           div(class = "card shadow p-4",
+                               h4("Movie You Watched Before", class = "mb-3"),
+                               selectizeInput(
+                                 "types_text_2",
+                                 label = NULL,
+                                 choices = df_movies$movies,
+                                 multiple = TRUE,
+                                 options = list(create = TRUE, placeholder = 'e.g. Interstellar, The Green Mile')
+                               ),
+                               selectInput(
+                                 "rating_2",
+                                 label = "Your Rating (0–5):",
+                                 choices = seq(0, 5, by = 0.5),
+                                 selected = NULL
+                               ),
+                               div(class = "d-flex justify-content-between mt-3",
+                                   actionButton("back1", "⬅️ Back", class = "btn btn-secondary"),
+                                   actionButton("next2", "Next ➡️ ", class = "btn btn-success")
+                               )
+                           )
+                       )
+              ),
+              
+              tabPanel("movie_3",
+                       div(class = "container mt-5",
+                           div(class = "card shadow p-4",
+                               h4("Movie You Watched Before", class = "mb-3"),
+                               selectizeInput(
+                                 "types_text_3",
+                                 label = NULL,
+                                 choices = df_movies$movies,
+                                 multiple = TRUE,
+                                 options = list(create = TRUE, placeholder = 'e.g. Interstellar, The Green Mile')
+                               ),
+                               selectInput(
+                                 "rating_3",
+                                 label = "Your Rating (0–5):",
+                                 choices = seq(0, 5, by = 0.5),
+                                 selected = NULL
+                               ),
+                               div(class = "d-flex justify-content-between mt-3",
+                                   actionButton("back2", "⬅️ Back", class = "btn btn-secondary"),
+                                   actionButton("next3", "Show Recommendations ✅", class = "btn btn-success")
+                               )
+                           )
+                       )
+              ),
+              
+              tabPanel("recommendation",
+                       div(class = "container mt-5",
+                           div(class = "card shadow p-4",
+                               h4("Recommended Movies", class = "mb-4"),
+                               withSpinner(tableOutput("recommendations"), type = 6, color = "#0d6efd"),
+                               actionButton("back4", "🔄 Start Again", class = "btn btn-warning mt-4")
+                           )
+                       )
+              )
   )
 )
 
-# Define Server
 server <- function(input, output, session) {
   
-  # Reactive values to store the data
-  values <- reactiveValues(
-    matches_data = todays_matches
-  )
+  observeEvent(input$next1, {
+    updateTabsetPanel(session, "tabs", selected = "movie_2")
+  })
   
-  # Render the editable data table
-  output$matches_table <- DT::renderDataTable({
-    DT::datatable(
-      values$matches_data,
-      editable = list(
-        target = 'cell',
-        disable = list(columns = c(0, 1, 2, 3, 4))  # Disable editing for match info columns
-      ),
-      options = list(
-        pageLength = 10,
-        scrollX = TRUE,
-        columnDefs = list(
-          list(targets = c(0), visible = FALSE),  # Hide Match_ID
-          list(targets = c(5, 6), width = "80px", className = "dt-center"),  # Score columns
-          list(targets = 7, width = "120px", className = "dt-center")  # Winner column
-        )
-      ),
-      colnames = c("ID", "Time", "Home Team", "Away Team", "League", 
-                   "Home Score", "Away Score", "Winner Prediction"),
-      rownames = FALSE,
-      selection = 'none'
-    )
-  }, server = FALSE)
+  observeEvent(input$back1, {
+    updateTabsetPanel(session, "tabs", selected = "movie_1")
+  })
   
-  # Handle cell edits
-  observeEvent(input$matches_table_cell_edit, {
-    info <- input$matches_table_cell_edit
-    row <- info$row
-    col <- info$col + 1  # R is 1-indexed
-    value <- info$value
+  observeEvent(input$back2, {
+    updateTabsetPanel(session, "tabs", selected = "movie_2")
+  })
+  
+  observeEvent(input$back3, {
+    updateTabsetPanel(session, "tabs", selected = "movie_3")
+  })
+  
+  observeEvent(input$next2, {
+    updateTabsetPanel(session, "tabs", selected = "movie_3")
+  })
+  
+  observeEvent(input$back4, {
+    updateTabsetPanel(session, "tabs", selected = "movie_1")
+  })
+  
+  recommend_movies <- eventReactive(input$next3, {
     
-    # Validate score predictions (must be numeric)
-    if (col %in% c(6, 7)) {  # Home_Score_Prediction or Away_Score_Prediction columns
-      if (!is.na(suppressWarnings(as.numeric(value))) && as.numeric(value) >= 0) {
-        values$matches_data[row, col] <- as.numeric(value)
-      } else {
-        showNotification("Please enter a valid score (non-negative number)", 
-                         type = "warning", duration = 3)
-        return()
-      }
+    df_1 <- read.csv("data/movie_ratings.csv")
+    df_1 <- df_1[,-1]
+    col_names <- colnames(df_1)[-1]
+    colnames(df_1)[-1] <- df_movies$movies
+    
+    req(input$types_text_1, input$types_text_2,input$types_text_3)
+    
+    col_1 = which(names(df_1) == input$types_text_1)
+    col_2 = which(names(df_1) == input$types_text_2)
+    col_3 = which(names(df_1) == input$types_text_3)
+    
+    df_2 <- df_1[!is.na(df_1[,col_1]) & !is.na(df_1[,col_2]) &
+                   !is.na(df_1[,col_3]), ]
+    
+    
+    
+    user <- data.frame(userId = 0 , rating_1 = input$rating_1, rating_2 = input$rating_2,
+                       rating_3 = input$rating_3)
+    
+    colnames(user) <- c('userId', input$types_text_1,input$types_text_2,
+                        input$types_text_3)
+    
+    df_compare <- df_2[,c(1,col_1,col_2,col_3)]
+    df_compare <- df_compare |> rbind(user)
+    df_compare$cosine <- 0
+    
+    for (i in c(1:nrow(df_compare))) {
+      df_compare[i,ncol(df_compare)] <- cosine(
+        as.numeric(df_compare[i,-c(1,ncol(df_compare))]),
+        as.numeric(df_compare[nrow(df_compare),-c(1,ncol(df_compare))]))
     }
     
-    # Validate winner prediction
-    if (col == 8) {  # Winner_Prediction column
-      valid_options <- c("Home", "Draw", "Away", "")
-      if (value %in% valid_options) {
-        values$matches_data[row, col] <- value
-      } else {
-        showNotification("Winner prediction must be 'Home', 'Draw', 'Away', or empty", 
-                         type = "warning", duration = 3)
-        return()
-      }
+    df_compare <- df_compare[-nrow(df_compare),]
+    df_sim_user <- df_compare[which.max(df_compare[[ncol(df_compare)]]), ]
+    df_sim_user_id <- df_sim_user[,1]
+    
+    df_optimal_row <- df_1[df_1[,1]==df_sim_user_id,]
+    df_optimal_row <- df_optimal_row[,-c(1,col_1,col_2,col_3)]
+    df_optimal_row <- df_optimal_row[,!is.na(df_optimal_row[1,])]
+    df_optimal_row <- df_optimal_row[,df_optimal_row[1,]==5]
+    rec_movie <- colnames(df_optimal_row)
+    rec_movies <- data.frame(movies = rec_movie)
+    rec_movies_genres <- merge(rec_movies, df_movies, 'movies', all.x = TRUE)
+    rec_movies_genres <- rec_movies_genres[,-2]
+    
+    if(nrow(rec_movies_genres)<10){
+      rec_movies_genres[c(1:nrow(rec_movies_genres)),]
+    }else{
+      rec_movies_genres[c(1:10),]
     }
+    
+    
+    
+    
+    
   })
   
-  # Submit predictions
-  observeEvent(input$submit_predictions, {
-    # Check if all predictions are complete
-    incomplete <- sum(is.na(values$matches_data$Home_Score_Prediction) | 
-                        is.na(values$matches_data$Away_Score_Prediction) |
-                        values$matches_data$Winner_Prediction == "")
-    
-    if (incomplete > 0) {
-      showNotification(paste(incomplete, "matches still need complete predictions"), 
-                       type = "warning", duration = 5)
-    } else {
-      showNotification("All predictions submitted successfully!", 
-                       type = "success", duration = 5)
-      
-      # Here you could save the predictions to a file or database
-      # saveRDS(values$matches_data, "predictions.rds")
-    }
+  output$recommendations <- renderTable({
+    recommend_movies()
   })
   
-  # Reset all predictions
-  observeEvent(input$reset_predictions, {
-    values$matches_data$Home_Score_Prediction <- rep(NA, nrow(values$matches_data))
-    values$matches_data$Away_Score_Prediction <- rep(NA, nrow(values$matches_data))
-    values$matches_data$Winner_Prediction <- rep("", nrow(values$matches_data))
-    
-    showNotification("All predictions have been reset", type = "message", duration = 3)
+  observeEvent(input$next3, {
+    updateTabsetPanel(session, "tabs", selected = "recommendation")
   })
   
-  # Prediction summary
-  output$prediction_summary <- renderText({
-    data <- values$matches_data
-    
-    completed_scores <- sum(!is.na(data$Home_Score_Prediction) & !is.na(data$Away_Score_Prediction))
-    completed_winners <- sum(data$Winner_Prediction != "")
-    total_matches <- nrow(data)
-    
-    home_wins <- sum(data$Winner_Prediction == "Home", na.rm = TRUE)
-    draws <- sum(data$Winner_Prediction == "Draw", na.rm = TRUE)
-    away_wins <- sum(data$Winner_Prediction == "Away", na.rm = TRUE)
-    
-    paste(
-      sprintf("Score predictions completed: %d/%d matches", completed_scores, total_matches),
-      sprintf("Winner predictions completed: %d/%d matches", completed_winners, total_matches),
-      sprintf("Predicted outcomes: %d Home wins, %d Draws, %d Away wins", home_wins, draws, away_wins),
-      sep = "\n"
-    )
-  })
 }
 
-# Run the application
-shinyApp(ui = ui, server = server)
+shinyApp(ui, server)
